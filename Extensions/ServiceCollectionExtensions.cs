@@ -3,6 +3,7 @@ using LineSDK.Messaging;
 using LineSDK.Notify;
 using LineSDK.Options;
 using LineSDK.Profile;
+using LineSDK.RichMenu;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -90,6 +91,7 @@ public static class ServiceCollectionExtensions
         // Register HttpClient
         services.AddHttpClient<ILineMessaging, LineMessagingService>();
         services.AddHttpClient<ILineProfile, LineProfileService>();
+        services.AddHttpClient<ILineRichMenu, LineRichMenuService>();
 
         // Register services
         services.AddScoped<ILineNotify, LineNotifyService>();

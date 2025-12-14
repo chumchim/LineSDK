@@ -108,6 +108,40 @@ public class LineMessagingService : ILineMessaging
 
     #endregion
 
+    #region Content
+
+    private const string DataBaseUrl = "https://api-data.line.me/v2/bot";
+
+    public async Task<MessageContent> GetContentAsync(string messageId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"{DataBaseUrl}/message/{messageId}/content", ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(ct);
+                _logger?.LogError("LINE Content API Error: {StatusCode} - {Error}", response.StatusCode, error);
+                throw new LineApiException(response.StatusCode, error);
+            }
+
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+            var contentLength = response.Content.Headers.ContentLength;
+            var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"');
+
+            var stream = await response.Content.ReadAsStreamAsync(ct);
+
+            return new MessageContent(stream, contentType, fileName, contentLength);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger?.LogError(ex, "LINE Content API Request failed for messageId {MessageId}", messageId);
+            throw;
+        }
+    }
+
+    #endregion
+
     #region Private Methods
 
     private async Task SendAsync(string url, object payload, CancellationToken ct)

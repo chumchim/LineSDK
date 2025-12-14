@@ -72,4 +72,16 @@ public interface ILineMessaging
     Task BroadcastAsync(ILineMessage message, CancellationToken ct = default);
 
     #endregion
+
+    #region Content (ดาวน์โหลด media content)
+
+    /// <summary>
+    /// ดาวน์โหลด binary content จาก message (image, video, audio, file)
+    /// </summary>
+    /// <param name="messageId">Message ID จาก webhook</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Binary content พร้อม content type</returns>
+    Task<MessageContent> GetContentAsync(string messageId, CancellationToken ct = default);
+
+    #endregion
 }

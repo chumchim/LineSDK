@@ -1,6 +1,7 @@
 using LineSDK.Messaging;
 using LineSDK.Notify;
 using LineSDK.Profile;
+using LineSDK.RichMenu;
 
 namespace LineSDK.Client;
 
@@ -12,11 +13,13 @@ public class LineClient : ILineClient
     public LineClient(
         ILineMessaging messaging,
         ILineNotify notify,
-        ILineProfile profile)
+        ILineProfile profile,
+        ILineRichMenu richMenu)
     {
         Messaging = messaging;
         Notify = notify;
         Profile = profile;
+        RichMenu = richMenu;
     }
 
     /// <inheritdoc />
@@ -27,4 +30,7 @@ public class LineClient : ILineClient
 
     /// <inheritdoc />
     public ILineProfile Profile { get; }
+
+    /// <inheritdoc />
+    public ILineRichMenu RichMenu { get; }
 }
