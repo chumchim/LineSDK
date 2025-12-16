@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using LineSDK.Messages;
 using LineSDK.Options;
+using LineSDK.Token;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -16,19 +17,19 @@ public class LineMessagingService : ILineMessaging
 
     private readonly HttpClient _httpClient;
     private readonly LineClientOptions _options;
+    private readonly ILineTokenProvider _tokenProvider;
     private readonly ILogger<LineMessagingService>? _logger;
 
     public LineMessagingService(
         HttpClient httpClient,
         IOptions<LineClientOptions> options,
+        ILineTokenProvider tokenProvider,
         ILogger<LineMessagingService>? logger = null)
     {
         _httpClient = httpClient;
         _options = options.Value;
+        _tokenProvider = tokenProvider;
         _logger = logger;
-
-        _httpClient.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ChannelAccessToken);
     }
 
     #region Push
@@ -116,7 +117,13 @@ public class LineMessagingService : ILineMessaging
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{DataBaseUrl}/message/{messageId}/content", ct);
+            var token = await _tokenProvider.GetTokenAsync(ct);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{DataBaseUrl}/message/{messageId}/content");
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            var response = await _httpClient.SendAsync(request, ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -148,7 +155,14 @@ public class LineMessagingService : ILineMessaging
     {
         try
         {
-            var response = await _httpClient.PostAsJsonAsync(url, payload, ct);
+            var token = await _tokenProvider.GetTokenAsync(ct);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            request.Content = JsonContent.Create(payload);
+
+            var response = await _httpClient.SendAsync(request, ct);
 
             if (!response.IsSuccessStatusCode)
             {

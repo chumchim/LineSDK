@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LineSDK.Options;
+using LineSDK.Token;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -14,6 +15,7 @@ namespace LineSDK.RichMenu;
 public class LineRichMenuService : ILineRichMenu
 {
     private readonly HttpClient _httpClient;
+    private readonly ILineTokenProvider _tokenProvider;
     private readonly ILogger<LineRichMenuService> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
 
@@ -23,14 +25,12 @@ public class LineRichMenuService : ILineRichMenu
     public LineRichMenuService(
         HttpClient httpClient,
         IOptions<LineClientOptions> options,
+        ILineTokenProvider tokenProvider,
         ILogger<LineRichMenuService> logger)
     {
         _httpClient = httpClient;
+        _tokenProvider = tokenProvider;
         _logger = logger;
-
-        // Set authorization header
-        _httpClient.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", options.Value.ChannelAccessToken);
 
         _jsonOptions = new JsonSerializerOptions
         {
@@ -46,7 +46,7 @@ public class LineRichMenuService : ILineRichMenu
         var json = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.PostAsync(BaseUrl, content, ct);
+        var response = await PostAsync(BaseUrl, content, ct);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<CreateRichMenuResponse>(ct);
@@ -61,7 +61,7 @@ public class LineRichMenuService : ILineRichMenu
         var content = new ByteArrayContent(imageData);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
 
-        var response = await _httpClient.PostAsync(url, content, ct);
+        var response = await PostAsync(url, content, ct);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Uploaded image for Rich Menu: {RichMenuId}", richMenuId);
@@ -69,7 +69,7 @@ public class LineRichMenuService : ILineRichMenu
 
     public async Task DeleteAsync(string richMenuId, CancellationToken ct = default)
     {
-        var response = await _httpClient.DeleteAsync($"{BaseUrl}/{richMenuId}", ct);
+        var response = await DeleteRequestAsync($"{BaseUrl}/{richMenuId}", ct);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Deleted Rich Menu: {RichMenuId}", richMenuId);
@@ -81,7 +81,7 @@ public class LineRichMenuService : ILineRichMenu
 
     public async Task LinkToUserAsync(string richMenuId, string userId, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsync(
+        var response = await PostAsync(
             $"{UserBaseUrl}/{userId}/richmenu/{richMenuId}",
             null,
             ct);
@@ -92,7 +92,7 @@ public class LineRichMenuService : ILineRichMenu
 
     public async Task UnlinkFromUserAsync(string userId, CancellationToken ct = default)
     {
-        var response = await _httpClient.DeleteAsync(
+        var response = await DeleteRequestAsync(
             $"{UserBaseUrl}/{userId}/richmenu",
             ct);
         response.EnsureSuccessStatusCode();
@@ -106,7 +106,7 @@ public class LineRichMenuService : ILineRichMenu
         var json = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.PostAsync(
+        var response = await PostAsync(
             "https://api.line.me/v2/bot/richmenu/bulk/link",
             content,
             ct);
@@ -121,7 +121,7 @@ public class LineRichMenuService : ILineRichMenu
         var json = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.PostAsync(
+        var response = await PostAsync(
             "https://api.line.me/v2/bot/richmenu/bulk/unlink",
             content,
             ct);
@@ -136,7 +136,7 @@ public class LineRichMenuService : ILineRichMenu
 
     public async Task SetDefaultAsync(string richMenuId, CancellationToken ct = default)
     {
-        var response = await _httpClient.PostAsync(
+        var response = await PostAsync(
             $"{UserBaseUrl}/all/richmenu/{richMenuId}",
             null,
             ct);
@@ -149,7 +149,7 @@ public class LineRichMenuService : ILineRichMenu
     {
         try
         {
-            var response = await _httpClient.GetAsync(
+            var response = await SendGetAsync(
                 "https://api.line.me/v2/bot/user/all/richmenu",
                 ct);
 
@@ -169,7 +169,7 @@ public class LineRichMenuService : ILineRichMenu
 
     public async Task CancelDefaultAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.DeleteAsync(
+        var response = await DeleteRequestAsync(
             "https://api.line.me/v2/bot/user/all/richmenu",
             ct);
         response.EnsureSuccessStatusCode();
@@ -185,7 +185,7 @@ public class LineRichMenuService : ILineRichMenu
     {
         try
         {
-            var response = await _httpClient.GetAsync(
+            var response = await SendGetAsync(
                 $"{UserBaseUrl}/{userId}/richmenu",
                 ct);
 
@@ -205,7 +205,7 @@ public class LineRichMenuService : ILineRichMenu
 
     public async Task<IEnumerable<RichMenuInfo>> GetAllAsync(CancellationToken ct = default)
     {
-        var response = await _httpClient.GetAsync($"{BaseUrl}/list", ct);
+        var response = await SendGetAsync($"{BaseUrl}/list", ct);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<GetAllRichMenusResponse>(_jsonOptions, ct);
@@ -216,7 +216,7 @@ public class LineRichMenuService : ILineRichMenu
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{BaseUrl}/{richMenuId}", ct);
+            var response = await SendGetAsync($"{BaseUrl}/{richMenuId}", ct);
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return null;
@@ -229,6 +229,44 @@ public class LineRichMenuService : ILineRichMenu
         {
             return null;
         }
+    }
+
+    #endregion
+
+    #region Private HTTP Helper Methods
+
+    private async Task<HttpResponseMessage> SendGetAsync(string url, CancellationToken ct)
+    {
+        var token = await _tokenProvider.GetTokenAsync(ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        return await _httpClient.SendAsync(request, ct);
+    }
+
+    private async Task<HttpResponseMessage> PostAsync(string url, HttpContent? content, CancellationToken ct)
+    {
+        var token = await _tokenProvider.GetTokenAsync(ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        request.Content = content;
+
+        return await _httpClient.SendAsync(request, ct);
+    }
+
+    private async Task<HttpResponseMessage> DeleteRequestAsync(string url, CancellationToken ct)
+    {
+        var token = await _tokenProvider.GetTokenAsync(ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, url);
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        return await _httpClient.SendAsync(request, ct);
     }
 
     #endregion

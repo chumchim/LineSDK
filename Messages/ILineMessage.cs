@@ -130,3 +130,22 @@ public class LocationMessage : ILineMessage
 
     public object ToJson() => new { type = Type, title = Title, address = Address, latitude = Latitude, longitude = Longitude };
 }
+
+/// <summary>
+/// File Message - ไฟล์ (Note: LINE มีข้อจำกัดในการส่งไฟล์ ต้องใช้ Text Message พร้อม URL แทน)
+/// สำหรับไฟล์ทั่วไป แนะนำให้ส่งเป็น Text Message พร้อม link
+/// </summary>
+public class FileMessage : ILineMessage
+{
+    public string Type => "text";
+    public string Text { get; set; } = "";
+
+    public FileMessage() { }
+    public FileMessage(string fileUrl, string? fileName = null)
+    {
+        var displayName = fileName ?? "ไฟล์";
+        Text = $"📎 {displayName}\n{fileUrl}";
+    }
+
+    public object ToJson() => new { type = Type, text = Text };
+}

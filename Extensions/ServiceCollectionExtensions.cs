@@ -4,8 +4,10 @@ using LineSDK.Notify;
 using LineSDK.Options;
 using LineSDK.Profile;
 using LineSDK.RichMenu;
+using LineSDK.Token;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LineSDK.Extensions;
 
@@ -22,8 +24,16 @@ public static class ServiceCollectionExtensions
     /// <returns>IServiceCollection</returns>
     /// <example>
     /// <code>
+    /// // Static token mode (default)
     /// services.AddLineClient(options => {
     ///     options.ChannelAccessToken = "your-token";
+    ///     options.ChannelSecret = "your-secret";
+    /// });
+    ///
+    /// // Stateless token mode (recommended for production)
+    /// services.AddLineClient(options => {
+    ///     options.TokenMode = LineTokenMode.Stateless;
+    ///     options.ChannelId = "your-channel-id";
     ///     options.ChannelSecret = "your-secret";
     /// });
     /// </code>
@@ -35,8 +45,15 @@ public static class ServiceCollectionExtensions
         // Configure options
         services.Configure(configure);
 
+        // Get options to determine token mode
+        var options = new LineClientOptions();
+        configure(options);
+
+        // Register token provider based on mode
+        services.AddLineTokenProvider(options.TokenMode);
+
         // Validate options on startup
-        services.PostConfigure<LineClientOptions>(options => options.Validate());
+        services.PostConfigure<LineClientOptions>(opt => opt.Validate());
 
         return services.AddLineClientCore();
     }
@@ -51,7 +68,9 @@ public static class ServiceCollectionExtensions
     /// <code>
     /// // appsettings.json:
     /// // "Line": {
-    /// //   "ChannelAccessToken": "your-token",
+    /// //   "TokenMode": "Static",  // or "Stateless"
+    /// //   "ChannelAccessToken": "your-token",  // for Static mode
+    /// //   "ChannelId": "your-channel-id",      // for Stateless mode
     /// //   "ChannelSecret": "your-secret"
     /// // }
     ///
@@ -64,6 +83,15 @@ public static class ServiceCollectionExtensions
     {
         // Bind from configuration
         services.Configure<LineClientOptions>(configuration);
+
+        // Get token mode from configuration
+        var tokenModeStr = configuration.GetValue<string>("TokenMode");
+        var tokenMode = Enum.TryParse<LineTokenMode>(tokenModeStr, true, out var mode)
+            ? mode
+            : LineTokenMode.Static; // Default to Static for backward compatibility
+
+        // Register token provider based on mode
+        services.AddLineTokenProvider(tokenMode);
 
         // Validate options on startup
         services.PostConfigure<LineClientOptions>(options => options.Validate());
@@ -86,9 +114,58 @@ public static class ServiceCollectionExtensions
         return services.AddLineClient(configuration.GetSection(sectionName));
     }
 
+    /// <summary>
+    /// เพิ่ม LINE Client with custom token provider
+    /// Use this when you need a custom token management strategy
+    /// </summary>
+    /// <typeparam name="TTokenProvider">Custom token provider type</typeparam>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Configuration section</param>
+    /// <returns>IServiceCollection</returns>
+    public static IServiceCollection AddLineClient<TTokenProvider>(
+        this IServiceCollection services,
+        IConfiguration configuration)
+        where TTokenProvider : class, ILineTokenProvider
+    {
+        // Bind from configuration
+        services.Configure<LineClientOptions>(configuration);
+
+        // Register custom token provider
+        services.AddSingleton<ILineTokenProvider, TTokenProvider>();
+
+        // Validate options on startup
+        services.PostConfigure<LineClientOptions>(options => options.Validate());
+
+        return services.AddLineClientCore();
+    }
+
+    /// <summary>
+    /// Register token provider based on token mode
+    /// </summary>
+    private static IServiceCollection AddLineTokenProvider(
+        this IServiceCollection services,
+        LineTokenMode tokenMode)
+    {
+        switch (tokenMode)
+        {
+            case LineTokenMode.Stateless:
+                // Stateless provider needs HttpClient for token issuance
+                services.AddHttpClient<ILineTokenProvider, StatelessTokenProvider>();
+                break;
+
+            case LineTokenMode.Static:
+            default:
+                // Static provider doesn't need HttpClient
+                services.AddSingleton<ILineTokenProvider, StaticTokenProvider>();
+                break;
+        }
+
+        return services;
+    }
+
     private static IServiceCollection AddLineClientCore(this IServiceCollection services)
     {
-        // Register HttpClient
+        // Register HttpClient for services
         services.AddHttpClient<ILineMessaging, LineMessagingService>();
         services.AddHttpClient<ILineProfile, LineProfileService>();
         services.AddHttpClient<ILineRichMenu, LineRichMenuService>();

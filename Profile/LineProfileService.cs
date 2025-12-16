@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using LineSDK.Messaging;
 using LineSDK.Models;
 using LineSDK.Options;
+using LineSDK.Token;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -16,19 +17,19 @@ public class LineProfileService : ILineProfile
 
     private readonly HttpClient _httpClient;
     private readonly LineClientOptions _options;
+    private readonly ILineTokenProvider _tokenProvider;
     private readonly ILogger<LineProfileService>? _logger;
 
     public LineProfileService(
         HttpClient httpClient,
         IOptions<LineClientOptions> options,
+        ILineTokenProvider tokenProvider,
         ILogger<LineProfileService>? logger = null)
     {
         _httpClient = httpClient;
         _options = options.Value;
+        _tokenProvider = tokenProvider;
         _logger = logger;
-
-        _httpClient.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ChannelAccessToken);
     }
 
     #region User Profile
@@ -37,7 +38,7 @@ public class LineProfileService : ILineProfile
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{BaseUrl}/profile/{userId}", ct);
+            var response = await GetAsync($"{BaseUrl}/profile/{userId}", ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -62,7 +63,7 @@ public class LineProfileService : ILineProfile
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{BaseUrl}/group/{groupId}/member/{userId}", ct);
+            var response = await GetAsync($"{BaseUrl}/group/{groupId}/member/{userId}", ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -83,7 +84,7 @@ public class LineProfileService : ILineProfile
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{BaseUrl}/group/{groupId}/summary", ct);
+            var response = await GetAsync($"{BaseUrl}/group/{groupId}/summary", ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -104,7 +105,7 @@ public class LineProfileService : ILineProfile
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{BaseUrl}/group/{groupId}/members/count", ct);
+            var response = await GetAsync($"{BaseUrl}/group/{groupId}/members/count", ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -139,7 +140,7 @@ public class LineProfileService : ILineProfile
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{BaseUrl}/room/{roomId}/member/{userId}", ct);
+            var response = await GetAsync($"{BaseUrl}/room/{roomId}/member/{userId}", ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -160,7 +161,7 @@ public class LineProfileService : ILineProfile
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{BaseUrl}/room/{roomId}/members/count", ct);
+            var response = await GetAsync($"{BaseUrl}/room/{roomId}/members/count", ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -206,11 +207,22 @@ public class LineProfileService : ILineProfile
 
     #region Private Methods
 
+    private async Task<HttpResponseMessage> GetAsync(string url, CancellationToken ct)
+    {
+        var token = await _tokenProvider.GetTokenAsync(ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        return await _httpClient.SendAsync(request, ct);
+    }
+
     private async Task<LineFollowersResult> GetMemberIdsAsync(string url, CancellationToken ct)
     {
         try
         {
-            var response = await _httpClient.GetAsync(url, ct);
+            var response = await GetAsync(url, ct);
 
             if (!response.IsSuccessStatusCode)
             {
